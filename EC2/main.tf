@@ -7,9 +7,21 @@ terraform {
   }
 }
 
-# AWS Provider
 provider "aws" {
-  region = "us-east-1"
+  region = "eu-north-1"
+}
+
+# -----------------------
+# Get latest Amazon Linux 2 AMI
+# -----------------------
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-hvm-*-x86_64-gp2"]
+  }
 }
 
 # -----------------------
@@ -19,7 +31,7 @@ resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
 
   tags = {
-    Name = "tf-vpc"
+    Name = "nginx-vpc"
   }
 }
 
@@ -29,11 +41,11 @@ resource "aws_vpc" "main" {
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
-  availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
+  availability_zone       = "eu-north-1a"
 
   tags = {
-    Name = "tf-public-subnet"
+    Name = "nginx-public-subnet"
   }
 }
 
@@ -44,7 +56,7 @@ resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "tf-igw"
+    Name = "nginx-igw"
   }
 }
 
@@ -60,27 +72,72 @@ resource "aws_route_table" "public_rt" {
   }
 
   tags = {
-    Name = "tf-public-rt"
+    Name = "nginx-public-rt"
   }
 }
 
-# -----------------------
-# Route Table Association
-# -----------------------
 resource "aws_route_table_association" "public_assoc" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public_rt.id
 }
 
 # -----------------------
-# EC2 Instance
+# Security Group (HTTP + SSH)
 # -----------------------
-resource "aws_instance" "myserver" {
-  ami           = "ami-0ecb62995f68bb549" # Amazon Linux 2 (us-east-1)
-  instance_type = "t3.nano"
-  subnet_id     = aws_subnet.public.id
+resource "aws_security_group" "nginx_sg" {
+  name   = "nginx-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   tags = {
-    Name = "terraform-ec2"
+    Name = "nginx-sg"
   }
 }
+
+# -----------------------
+# EC2 with NGINX
+# -----------------------
+resource "aws_instance" "nginx_server" {
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.micro"
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.nginx_sg.id]
+
+  user_data = <<-EOF
+              #!/bin/bash
+              yum update -y
+              amazon-linux-extras install nginx1 -y
+              systemctl start nginx
+              systemctl enable nginx
+              EOF
+
+  tags = {
+    Name = "nginx-ec2"
+  }
+}
+
+# -----------------------
+# Output public IP
+# -----------------------
