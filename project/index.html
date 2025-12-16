@@ -1,47 +1,196 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Static Website</title>
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<title>CIDR Visual Calculator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+*{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+
+body{
+  background:#0f172a;
+  color:#e5e7eb;
+  display:flex;
+  justify-content:center;
+  padding:40px;
+}
+
+.container{
+  max-width:900px;
+  width:100%;
+  background:#020617;
+  padding:30px;
+  border-radius:12px;
+}
+
+h1{margin-bottom:6px}
+.subtitle{color:#94a3b8;margin-bottom:20px}
+
+input{
+  width:100%;
+  padding:14px;
+  font-size:16px;
+  background:#020617;
+  color:#e5e7eb;
+  border:1px solid #1e293b;
+  border-radius:8px;
+}
+
+.section{
+  margin-top:25px;
+  border:1px solid #1e293b;
+  border-radius:10px;
+  overflow:hidden;
+}
+
+.section-title{
+  padding:10px 16px;
+  background:#020617;
+  border-bottom:1px solid #1e293b;
+  color:#7dd3fc;
+  font-weight:bold;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  padding:12px 16px;
+  border-bottom:1px solid #1e293b;
+}
+.row:last-child{border-bottom:none}
+
+.label{color:#94a3b8}
+.value{font-family:monospace}
+
+.bits{
+  display:grid;
+  grid-template-columns:repeat(32,1fr);
+  gap:2px;
+  padding:16px;
+}
+
+.bit{
+  height:28px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:11px;
+  border-radius:4px;
+  color:#020617;
+}
+
+.network{background:#22c55e}
+.host{background:#38bdf8}
+
+.bit-labels{
+  display:grid;
+  grid-template-columns:repeat(32,1fr);
+  gap:2px;
+  padding:0 16px 12px;
+  font-size:10px;
+  color:#64748b;
+}
+
+footer{
+  margin-top:30px;
+  text-align:center;
+  font-size:13px;
+  color:#64748b;
+}
+</style>
 </head>
+
 <body>
+<div class="container">
+  <h1>CIDR Calculator</h1>
+  <p class="subtitle">Live subnet & bit-level visualization</p>
 
-  <header class="navbar">
-    <h1>Parthiv.dev</h1>
-    <nav>
-      <a href="#">Home</a>
-      <a href="#">About</a>
-      <a href="#">Projects</a>
-      <a href="#">Contact</a>
-    </nav>
-  </header>
+  <input id="cidrInput" placeholder="e.g. 192.168.1.0/24">
 
-  <section class="hero">
-    <h2>Welcome to My Static Website</h2>
-    <p>Built using only HTML & CSS</p>
-    <button>Get Started</button>
-  </section>
+  <div id="result" style="display:none;">
 
-  <section class="cards">
-    <div class="card">
-      <h3>Fast</h3>
-      <p>No backend. Loads instantly.</p>
+    <div class="section">
+      <div class="section-title">Subnet Summary</div>
+      <div class="row"><span class="label">Network</span><span class="value" id="network"></span></div>
+      <div class="row"><span class="label">Netmask</span><span class="value" id="netmask"></span></div>
+      <div class="row"><span class="label">Broadcast</span><span class="value" id="broadcast"></span></div>
+      <div class="row"><span class="label">Usable Hosts</span><span class="value" id="hosts"></span></div>
     </div>
-    <div class="card">
-      <h3>Secure</h3>
-      <p>No server-side attacks.</p>
-    </div>
-    <div class="card">
-      <h3>Cloud Ready</h3>
-      <p>Perfect for S3, CloudFront.</p>
-    </div>
-  </section>
 
-  <footer>
-    <p>© 2025 Parthiv | Static Website Demo</p>
-  </footer>
+    <div class="section">
+      <div class="section-title">CIDR Bit Visualization (32 bits)</div>
+      <div class="bits" id="bitBar"></div>
+      <div class="bit-labels">
+        <span>1</span><span>2</span><span>3</span><span>4</span>
+        <span>5</span><span>6</span><span>7</span><span>8</span>
+        <span>9</span><span>10</span><span>11</span><span>12</span>
+        <span>13</span><span>14</span><span>15</span><span>16</span>
+        <span>17</span><span>18</span><span>19</span><span>20</span>
+        <span>21</span><span>22</span><span>23</span><span>24</span>
+        <span>25</span><span>26</span><span>27</span><span>28</span>
+        <span>29</span><span>30</span><span>31</span><span>32</span>
+      </div>
+    </div>
 
+  </div>
+
+  <footer>Green = Network bits • Blue = Host bits</footer>
+</div>
+
+<script>
+const input=document.getElementById("cidrInput");
+const result=document.getElementById("result");
+const bitBar=document.getElementById("bitBar");
+
+function ipToInt(ip){
+  return ip.split('.').reduce((a,o)=>(a<<8)+Number(o),0)>>>0;
+}
+function intToIp(n){
+  return[(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join('.');
+}
+function validIp(ip){
+  return /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) &&
+    ip.split('.').every(o=>+o<=255);
+}
+
+input.addEventListener("input",()=>{
+  const v=input.value.trim();
+  result.style.display="none";
+
+  if(!/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/.test(v)) return;
+
+  const [ip,prefix]=v.split("/");
+  const bits=Number(prefix);
+  if(!validIp(ip)||bits<0||bits>32) return;
+
+  const ipInt=ipToInt(ip);
+  const mask=bits===0?0:(~0<<(32-bits))>>>0;
+  const network=ipInt&mask;
+  const broadcast=network|(~mask>>>0);
+  const hosts=bits>=31?0:(2**(32-bits)-2);
+
+  networkEl.textContent=intToIp(network);
+  netmaskEl.textContent=intToIp(mask);
+  broadcastEl.textContent=intToIp(broadcast);
+  hostsEl.textContent=hosts;
+
+  // Build dynamic bit bar
+  bitBar.innerHTML="";
+  for(let i=1;i<=32;i++){
+    const bit=document.createElement("div");
+    bit.className="bit "+(i<=bits?"network":"host");
+    bit.textContent=i<=bits?1:0;
+    bitBar.appendChild(bit);
+  }
+
+  result.style.display="block";
+});
+
+const networkEl=document.getElementById("network");
+const netmaskEl=document.getElementById("netmask");
+const broadcastEl=document.getElementById("broadcast");
+const hostsEl=document.getElementById("hosts");
+</script>
 </body>
 </html>
